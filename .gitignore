@@ -23,3 +23,12 @@ Thumbs.db
 # Environment
 .env
 .env.*
+
+# Text
+*.txt
+private/
+
+# Build artifacts
+cover.out
+dist/
+Dockerfile.cross

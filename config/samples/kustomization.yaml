@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- decisions_v1alpha1_decisiongate.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

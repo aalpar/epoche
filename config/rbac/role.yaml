@@ -1,0 +1,32 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - decisions.epoche.dev
+  resources:
+  - decisiongates
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - decisions.epoche.dev
+  resources:
+  - decisiongates/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - decisions.epoche.dev
+  resources:
+  - decisiongates/status
+  verbs:
+  - get
+  - patch
+  - update

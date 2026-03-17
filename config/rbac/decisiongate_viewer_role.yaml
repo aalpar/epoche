@@ -1,0 +1,29 @@
+# This rule is not used by the project epoche itself.
+# It is provided to allow the cluster admin to help manage permissions for users.
+#
+# Grants read-only access to decisions.epoche.dev resources.
+# This role is intended for users who need visibility into these resources
+# without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: epoche
+    app.kubernetes.io/managed-by: kustomize
+  name: decisiongate-viewer-role
+rules:
+- apiGroups:
+  - decisions.epoche.dev
+  resources:
+  - decisiongates
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - decisions.epoche.dev
+  resources:
+  - decisiongates/status
+  verbs:
+  - get
