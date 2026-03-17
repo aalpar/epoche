@@ -157,6 +157,27 @@ spec:
                   type: object
                 minItems: 1
                 type: array
+              response:
+                description: |-
+                  response is filled in by a responder to resolve the gate.
+                  Leave empty when creating the gate; a responder patches this field to make a decision.
+                properties:
+                  action:
+                    description: action is the name of the chosen option. Must match
+                      a name in spec.options.
+                    type: string
+                  reason:
+                    description: reason is an optional justification for the choice.
+                    type: string
+                  respondedBy:
+                    description: |-
+                      respondedBy identifies who made the decision (e.g. "user:alice@company.com",
+                      "serviceaccount:automation/memory-bot").
+                    type: string
+                required:
+                - action
+                - respondedBy
+                type: object
               targetRef:
                 description: targetRef identifies the pod and container to freeze.
                 properties:

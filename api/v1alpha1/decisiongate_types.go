@@ -42,6 +42,27 @@ type DecisionGateSpec struct {
 	// +required
 	// +kubebuilder:validation:MinItems=1
 	Options []Option `json:"options"`
+
+	// response is filled in by a responder to resolve the gate.
+	// Leave empty when creating the gate; a responder patches this field to make a decision.
+	// +optional
+	Response *Response `json:"response,omitempty"`
+}
+
+// Response is provided by a responder to resolve a pending gate.
+type Response struct {
+	// action is the name of the chosen option. Must match a name in spec.options.
+	// +required
+	Action string `json:"action"`
+
+	// respondedBy identifies who made the decision (e.g. "user:alice@company.com",
+	// "serviceaccount:automation/memory-bot").
+	// +required
+	RespondedBy string `json:"respondedBy"`
+
+	// reason is an optional justification for the choice.
+	// +optional
+	Reason string `json:"reason,omitempty"`
 }
 
 // TargetReference identifies a specific container in a pod.

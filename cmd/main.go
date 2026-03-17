@@ -179,8 +179,10 @@ func main() {
 	}
 
 	if err := (&controller.DecisionGateReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Freezer:  &controller.LogFreezer{},
+		Notifier: &controller.LogNotifier{},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "DecisionGate")
 		os.Exit(1)
