@@ -1,0 +1,46 @@
+apiVersion: decisions.k8s.io/v1alpha1
+kind: DecisionGate
+metadata:
+  name: order-svc-memory-pressure
+  namespace: production
+spec:
+  targetRef:
+    kind: Pod
+    name: order-svc-7b4f9c-x2k
+    container: order-svc
+
+  condition:
+    type: ResourcePressure
+    summary: "Container approaching memory limit (92% of 4Gi)"
+    detail: "Heap growth rate suggests OOM in ~8 minutes at current trajectory"
+    severity: Warning
+    metrics:
+      memoryUsed: "3.68Gi"
+      memoryLimit: "4Gi"
+      heapGrowthRate: "12Mi/min"
+
+  escalation:
+    channels:
+      - type: PagerDuty
+        properties:
+          serviceKey: order-svc-oncall
+      - type: Slack
+        properties:
+          channel: "#prod-incidents"
+    allowedResponders:
+      - group: sre-oncall
+      - serviceAccount: automation/memory-policy-bot
+
+  timeout:
+    duration: 5m
+    defaultAction: ScaleVertical
+
+  options:
+    - name: Continue
+      description: "Process is behaving normally, let it run"
+    - name: HeapDump
+      description: "Take heap dump, then restart gracefully"
+    - name: ScaleVertical
+      description: "Increase memory limit to 6Gi"
+    - name: Kill
+      description: "OOM kill immediately, investigate later"
