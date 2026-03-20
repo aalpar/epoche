@@ -14,7 +14,7 @@ func newUpstream(t *testing.T, status int, body string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(status)
-		io.WriteString(w, body)
+		_, _ = io.WriteString(w, body)
 	}))
 	t.Cleanup(srv.Close)
 	return srv

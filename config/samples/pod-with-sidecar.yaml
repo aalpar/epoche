@@ -1,0 +1,56 @@
+# Example: a pod configured with the epoche-proxy sidecar.
+#
+# The main container's probes are served by the sidecar. When frozen,
+# the sidecar returns 200 for liveness (keep alive) and 503 for
+# readiness (remove from traffic). When unfrozen, it proxies to the
+# main container's actual health endpoints.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example-with-epoche-sidecar
+  namespace: default
+  labels:
+    app: example
+spec:
+  containers:
+    - name: app
+      image: busybox
+      command: ["sh", "-c", "while true; do echo ok; sleep 10; done"]
+      ports:
+        - containerPort: 8080
+    - name: epoche-proxy
+      image: epoche.dev/proxy:latest
+      args:
+        - --liveness-upstream=http://localhost:8080/healthz
+        - --readiness-upstream=http://localhost:8080/readyz
+        - --manage-port=9901
+        - --probe-port=9902
+        - --state-path=/etc/epoche/frozen
+      ports:
+        - containerPort: 9901
+          name: manage
+        - containerPort: 9902
+          name: probes
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: probes
+        periodSeconds: 10
+        failureThreshold: 3
+      readinessProbe:
+        httpGet:
+          path: /readyz
+          port: probes
+        periodSeconds: 5
+        failureThreshold: 1
+      volumeMounts:
+        - name: epoche-state
+          mountPath: /etc/epoche
+          readOnly: true
+  volumes:
+    - name: epoche-state
+      downwardAPI:
+        items:
+          - path: frozen
+            fieldRef:
+              fieldPath: metadata.labels['epoche.dev/frozen']

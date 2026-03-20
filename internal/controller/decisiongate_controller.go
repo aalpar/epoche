@@ -326,7 +326,7 @@ func (r *DecisionGateReconciler) notifySidecar(ctx context.Context, pod *corev1.
 		log.Error(err, "Failed to notify sidecar", "action", action, "pod", pod.Name)
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		log.Info("Sidecar returned non-OK status", "action", action, "status", resp.StatusCode)
 	}

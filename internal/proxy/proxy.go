@@ -76,7 +76,7 @@ func (p *Proxy) ManageHandler() http.Handler {
 func (p *Proxy) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	if p.frozen.Load() {
 		w.WriteHeader(http.StatusOK)
-		io.WriteString(w, "frozen: alive")
+		_, _ = io.WriteString(w, "frozen: alive")
 		return
 	}
 	p.proxyTo(w, p.livenessUpstream)
@@ -85,7 +85,7 @@ func (p *Proxy) handleHealthz(w http.ResponseWriter, r *http.Request) {
 func (p *Proxy) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	if p.frozen.Load() {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		io.WriteString(w, "frozen: not ready")
+		_, _ = io.WriteString(w, "frozen: not ready")
 		return
 	}
 	p.proxyTo(w, p.readinessUpstream)
@@ -94,13 +94,13 @@ func (p *Proxy) handleReadyz(w http.ResponseWriter, r *http.Request) {
 func (p *Proxy) handleFreeze(w http.ResponseWriter, r *http.Request) {
 	p.frozen.Store(true)
 	w.WriteHeader(http.StatusOK)
-	io.WriteString(w, "frozen")
+	_, _ = io.WriteString(w, "frozen")
 }
 
 func (p *Proxy) handleUnfreeze(w http.ResponseWriter, r *http.Request) {
 	p.frozen.Store(false)
 	w.WriteHeader(http.StatusOK)
-	io.WriteString(w, "unfrozen")
+	_, _ = io.WriteString(w, "unfrozen")
 }
 
 // proxyTo issues a GET to the upstream URL and copies the response status and
@@ -109,10 +109,10 @@ func (p *Proxy) proxyTo(w http.ResponseWriter, upstream string) {
 	resp, err := p.client.Get(upstream)
 	if err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		io.WriteString(w, err.Error())
+		_, _ = io.WriteString(w, err.Error())
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	_, _ = io.Copy(w, resp.Body)
 }
