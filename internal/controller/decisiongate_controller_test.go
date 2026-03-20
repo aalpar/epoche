@@ -176,6 +176,22 @@ var _ = Describe("DecisionGate Controller", func() {
 			Expect(notifier.calls).To(Equal(1))
 		})
 
+		It("should set the frozen label on the target pod", func() {
+			podName := uniqueName("pod")
+			gateName := uniqueName("gate")
+			createPod(ctx, podName)
+			createGate(ctx, gateName, podName)
+
+			_, err := doReconcile(gateName)
+			Expect(err).NotTo(HaveOccurred())
+
+			var pod corev1.Pod
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: podName, Namespace: "default",
+			}, &pod)).To(Succeed())
+			Expect(pod.Labels).To(HaveKeyWithValue("epoche.dev/frozen", "true"))
+		})
+
 		It("should fail when target pod does not exist", func() {
 			gateName := uniqueName("gate")
 			createGate(ctx, gateName, "no-such-pod")
@@ -372,6 +388,13 @@ var _ = Describe("DecisionGate Controller", func() {
 
 			gate = getGate(ctx, gateName)
 			Expect(gate.Status.Phase).To(Equal(decisionsv1alpha1.GatePhaseExecuted))
+
+			// Verify frozen label was removed from pod.
+			var updatedPod corev1.Pod
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: podName, Namespace: "default",
+			}, &updatedPod)).To(Succeed())
+			Expect(updatedPod.Labels).NotTo(HaveKey("epoche.dev/frozen"))
 
 			// Verify unfreeze was called.
 			Expect(freezer.unfreezeCalls).To(HaveLen(1))

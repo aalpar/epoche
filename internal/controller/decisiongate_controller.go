@@ -57,7 +57,7 @@ type DecisionGateReconciler struct {
 // +kubebuilder:rbac:groups=decisions.epoche.dev,resources=decisiongates,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=decisions.epoche.dev,resources=decisiongates/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=decisions.epoche.dev,resources=decisiongates/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;patch
 
 func (r *DecisionGateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -116,6 +116,11 @@ func (r *DecisionGateReconciler) initialize(ctx context.Context, gate *decisions
 		log.Error(err, "Failed to freeze container")
 		r.setFailed(gate, "FreezeFailed", err.Error())
 		return ctrl.Result{}, r.Status().Update(ctx, gate)
+	}
+
+	// Set frozen label on target pod (best-effort).
+	if err := r.setPodFrozenLabel(ctx, gate.Namespace, gate.Spec.TargetRef.Name, true); err != nil {
+		log.Error(err, "Failed to set frozen label on pod")
 	}
 
 	now := metav1.NewTime(r.now())
@@ -230,6 +235,11 @@ func (r *DecisionGateReconciler) reconcileDecided(ctx context.Context, gate *dec
 		return ctrl.Result{}, r.Status().Update(ctx, gate)
 	}
 
+	// Remove frozen label from target pod (best-effort).
+	if err := r.setPodFrozenLabel(ctx, gate.Namespace, gate.Spec.TargetRef.Name, false); err != nil {
+		log.Error(err, "Failed to remove frozen label from pod")
+	}
+
 	// Unfreeze the container.
 	if err := r.Freezer.Unfreeze(ctx, gate.Namespace, gate.Spec.TargetRef.Name, gate.Spec.TargetRef.Container); err != nil {
 		log.Error(err, "Failed to unfreeze container")
@@ -313,6 +323,24 @@ func isValidOption(options []decisionsv1alpha1.Option, action string) bool {
 		}
 	}
 	return false
+}
+
+// setPodFrozenLabel sets or removes the epoche.dev/frozen label on a pod.
+func (r *DecisionGateReconciler) setPodFrozenLabel(ctx context.Context, namespace, podName string, frozen bool) error {
+	var pod corev1.Pod
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: podName}, &pod); err != nil {
+		return err
+	}
+	patch := client.MergeFrom(pod.DeepCopy())
+	if pod.Labels == nil {
+		pod.Labels = make(map[string]string)
+	}
+	if frozen {
+		pod.Labels["epoche.dev/frozen"] = "true"
+	} else {
+		delete(pod.Labels, "epoche.dev/frozen")
+	}
+	return r.Patch(ctx, &pod, patch)
 }
 
 // SetupWithManager sets up the controller with the Manager.
