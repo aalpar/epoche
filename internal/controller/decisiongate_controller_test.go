@@ -19,6 +19,10 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -74,6 +78,12 @@ func uniqueName(prefix string) string {
 	return fmt.Sprintf("%s-%d", prefix, testCounter)
 }
 
+func sidecarPort(s *httptest.Server) int {
+	_, portStr, _ := net.SplitHostPort(s.Listener.Addr().String())
+	port, _ := strconv.Atoi(portStr)
+	return port
+}
+
 func createPod(ctx context.Context, name string) {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
@@ -84,6 +94,9 @@ func createPod(ctx context.Context, name string) {
 		},
 	}
 	ExpectWithOffset(1, k8sClient.Create(ctx, pod)).To(Succeed())
+	// Set PodIP for sidecar HTTP tests (envtest has no kubelet).
+	pod.Status.PodIP = "127.0.0.1"
+	ExpectWithOffset(1, k8sClient.Status().Update(ctx, pod)).To(Succeed())
 }
 
 func createGate(ctx context.Context, name, podName string) {
@@ -127,23 +140,42 @@ func getGate(ctx context.Context, name string) *decisionsv1alpha1.DecisionGate {
 
 var _ = Describe("DecisionGate Controller", func() {
 	var (
-		reconciler  *DecisionGateReconciler
-		freezer     *recordingFreezer
-		notifier    *recordingNotifier
-		currentTime time.Time
+		reconciler       *DecisionGateReconciler
+		freezer          *recordingFreezer
+		notifier         *recordingNotifier
+		currentTime      time.Time
+		sidecarServer    *httptest.Server
+		sidecarFreezes   int
+		sidecarUnfreezes int
 	)
 
 	BeforeEach(func() {
 		currentTime = time.Date(2026, 3, 17, 12, 0, 0, 0, time.UTC)
 		freezer = &recordingFreezer{}
 		notifier = &recordingNotifier{}
+		sidecarFreezes = 0
+		sidecarUnfreezes = 0
+		sidecarServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/manage/freeze":
+				sidecarFreezes++
+			case "/manage/unfreeze":
+				sidecarUnfreezes++
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
 		reconciler = &DecisionGateReconciler{
-			Client:   k8sClient,
-			Scheme:   k8sClient.Scheme(),
-			Freezer:  freezer,
-			Notifier: notifier,
-			Now:      func() time.Time { return currentTime },
+			Client:            k8sClient,
+			Scheme:            k8sClient.Scheme(),
+			Freezer:           freezer,
+			Notifier:          notifier,
+			Now:               func() time.Time { return currentTime },
+			SidecarManagePort: sidecarPort(sidecarServer),
 		}
+	})
+
+	AfterEach(func() {
+		sidecarServer.Close()
 	})
 
 	doReconcile := func(name string) (reconcile.Result, error) {
@@ -190,6 +222,18 @@ var _ = Describe("DecisionGate Controller", func() {
 				Name: podName, Namespace: "default",
 			}, &pod)).To(Succeed())
 			Expect(pod.Labels).To(HaveKeyWithValue("epoche.dev/frozen", "true"))
+		})
+
+		It("should call the sidecar management API on freeze", func() {
+			podName := uniqueName("pod")
+			gateName := uniqueName("gate")
+			createPod(ctx, podName)
+			createGate(ctx, gateName, podName)
+
+			_, err := doReconcile(gateName)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(sidecarFreezes).To(Equal(1))
 		})
 
 		It("should fail when target pod does not exist", func() {
@@ -421,6 +465,33 @@ var _ = Describe("DecisionGate Controller", func() {
 				}
 			}
 			Expect(complete).To(BeTrue(), "expected Complete condition")
+		})
+
+		It("should call the sidecar management API on unfreeze", func() {
+			podName := uniqueName("pod")
+			gateName := uniqueName("gate")
+			createPod(ctx, podName)
+			createGate(ctx, gateName, podName)
+
+			// Initialize → Pending
+			_, err := doReconcile(gateName)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Provide response → Decided
+			gate := getGate(ctx, gateName)
+			gate.Spec.Response = &decisionsv1alpha1.Response{
+				Action: "Continue", RespondedBy: "user:test",
+			}
+			Expect(k8sClient.Update(ctx, gate)).To(Succeed())
+			_, err = doReconcile(gateName)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Execute → Executed (should call sidecar unfreeze)
+			sidecarUnfreezes = 0
+			_, err = doReconcile(gateName)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(sidecarUnfreezes).To(Equal(1))
 		})
 
 		It("should complete the full lifecycle through timeout", func() {

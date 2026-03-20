@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -48,10 +49,11 @@ type Notifier interface {
 // DecisionGateReconciler reconciles a DecisionGate object.
 type DecisionGateReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Freezer  Freezer
-	Notifier Notifier
-	Now      func() time.Time // injectable for testing
+	Scheme            *runtime.Scheme
+	Freezer           Freezer
+	Notifier          Notifier
+	Now               func() time.Time // injectable for testing
+	SidecarManagePort int              // port for sidecar management API (0 = disabled)
 }
 
 // +kubebuilder:rbac:groups=decisions.epoche.dev,resources=decisiongates,verbs=get;list;watch;create;update;patch;delete
@@ -117,6 +119,9 @@ func (r *DecisionGateReconciler) initialize(ctx context.Context, gate *decisions
 		r.setFailed(gate, "FreezeFailed", err.Error())
 		return ctrl.Result{}, r.Status().Update(ctx, gate)
 	}
+
+	// Notify sidecar to stop proxying after freezing.
+	r.notifySidecar(ctx, &pod, "freeze")
 
 	// Set frozen label on target pod (best-effort).
 	if err := r.setPodFrozenLabel(ctx, gate.Namespace, gate.Spec.TargetRef.Name, true); err != nil {
@@ -235,6 +240,14 @@ func (r *DecisionGateReconciler) reconcileDecided(ctx context.Context, gate *dec
 		return ctrl.Result{}, r.Status().Update(ctx, gate)
 	}
 
+	// Notify sidecar to resume proxying before unfreezing.
+	var pod corev1.Pod
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: gate.Namespace, Name: gate.Spec.TargetRef.Name,
+	}, &pod); err == nil {
+		r.notifySidecar(ctx, &pod, "unfreeze")
+	}
+
 	// Remove frozen label from target pod (best-effort).
 	if err := r.setPodFrozenLabel(ctx, gate.Namespace, gate.Spec.TargetRef.Name, false); err != nil {
 		log.Error(err, "Failed to remove frozen label from pod")
@@ -297,6 +310,25 @@ func (r *DecisionGateReconciler) now() time.Time {
 		return r.Now()
 	}
 	return time.Now()
+}
+
+func (r *DecisionGateReconciler) notifySidecar(ctx context.Context, pod *corev1.Pod, action string) {
+	if r.SidecarManagePort == 0 || pod.Status.PodIP == "" {
+		return
+	}
+	log := logf.FromContext(ctx)
+	url := fmt.Sprintf("http://%s:%d/manage/%s", pod.Status.PodIP, r.SidecarManagePort, action)
+
+	httpClient := &http.Client{Timeout: 3 * time.Second}
+	resp, err := httpClient.Post(url, "", nil)
+	if err != nil {
+		log.Error(err, "Failed to notify sidecar", "action", action, "pod", pod.Name)
+		return
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.Info("Sidecar returned non-OK status", "action", action, "status", resp.StatusCode)
+	}
 }
 
 func (r *DecisionGateReconciler) parseTimeout(gate *decisionsv1alpha1.DecisionGate) time.Duration {
