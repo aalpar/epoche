@@ -60,6 +60,7 @@ type DecisionGateReconciler struct {
 // +kubebuilder:rbac:groups=decisions.epoche.dev,resources=decisiongates/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=decisions.epoche.dev,resources=decisiongates/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups="",resources=pods/exec,verbs=create
 
 func (r *DecisionGateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)

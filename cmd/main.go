@@ -27,6 +27,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -77,6 +78,9 @@ func main() {
 		"The directory that contains the metrics server certificate.")
 	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
+	var freezerType string
+	flag.StringVar(&freezerType, "freezer", "log",
+		"Freezer implementation: 'log' (development) or 'exec' (production, requires pods/exec RBAC)")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	opts := zap.Options{
@@ -178,11 +182,32 @@ func main() {
 		os.Exit(1)
 	}
 
+	var freezerImpl controller.Freezer
+	switch freezerType {
+	case "exec":
+		clientset, csErr := kubernetes.NewForConfig(mgr.GetConfig())
+		if csErr != nil {
+			setupLog.Error(csErr, "Failed to create clientset for ExecFreezer")
+			os.Exit(1)
+		}
+		freezerImpl = &controller.ExecFreezer{
+			Exec: &controller.KubeExecutor{
+				Client: clientset,
+				Config: mgr.GetConfig(),
+			},
+		}
+		setupLog.Info("Using exec freezer")
+	default:
+		freezerImpl = &controller.LogFreezer{}
+		setupLog.Info("Using log freezer (development mode)")
+	}
+
 	if err := (&controller.DecisionGateReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Freezer:  &controller.LogFreezer{},
-		Notifier: &controller.LogNotifier{},
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Freezer:           freezerImpl,
+		Notifier:          &controller.LogNotifier{},
+		SidecarManagePort: 9901,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "DecisionGate")
 		os.Exit(1)
