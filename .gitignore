@@ -1,5 +1,6 @@
 # Binaries
 bin/
+/proxy
 *.exe
 *.dll
 *.so
