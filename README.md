@@ -2,6 +2,10 @@
 
 **Deliberate suspension of judgment for Kubernetes workloads.**
 
+> ⚠️ **Experimental.** Epoché is an early-stage project (`v1alpha1`) under active
+> development. APIs, the `DecisionGate` schema, and behavior may change without
+> notice. It is not yet recommended for production use.
+
 *Epoché* (ἐποχή) — the Pyrrhonian Skeptic practice of withholding judgment
 when evidence is insufficient. Applied to infrastructure: when a system
 reaches its compensation boundary, the correct response is not to act on
